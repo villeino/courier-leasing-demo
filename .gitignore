@@ -1,0 +1,19 @@
+
+node_modules/
+dist/
+build/
+.next/
+.out/
+coverage/
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+# Env & secrets
+.env
+.env.*
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
