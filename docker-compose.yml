@@ -1,0 +1,5 @@
+services:
+  web:
+    build: .
+    container_name: leasing_web
+    restart: unless-stopped
