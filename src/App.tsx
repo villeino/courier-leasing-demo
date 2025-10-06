@@ -7,7 +7,7 @@ import React, { useMemo, useState, useEffect } from "react";
 // - Suosittele kaverille: jakolinkki + ehdot
 // - Uusi hakemus: vahva tunnistautuminen (demo-kytkin)
 //
-// FIX: Removed invalid escapes (") inside JSX attributes that caused:
+// FIX: Removed invalid escapes (\") inside JSX attributes that caused:
 //   SyntaxError: Expecting Unicode escape sequence \uXXXX
 // Added: lightweight smoke tests via console.assert to validate UI renders.
 
@@ -36,9 +36,11 @@ export default function App() {
   const [issueOpen, setIssueOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [referOpen, setReferOpen] = useState(false);
+  const [tireOpen, setTireOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
+  // Mock contract end date ~ 8 kk 12 pv
   const contractEnds = useMemo(() => {
     const d = new Date();
     d.setMonth(d.getMonth() + 8);
@@ -56,6 +58,7 @@ export default function App() {
     );
   }
 
+  // --- DEV smoke tests (run once after mount) ---
   useEffect(() => {
     try {
       console.assert(daysLeft > 0, "daysLeft should be > 0");
@@ -69,11 +72,13 @@ export default function App() {
           "Etusivu tab should exist"
         );
       }
+      // eslint-disable-next-line no-console
       console.log("✅ Demo smoke tests passed");
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.warn("⚠️ Demo smoke tests: ", e);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -82,13 +87,15 @@ export default function App() {
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Michroma&display=swap');`}</style>
 
+      {/* Phone frame (iPhone 15 Pro-like viewport): 393 x 852 */}
       <div
         className="relative w-[393px] h-[852px] rounded-[44px] shadow-2xl ring-1 overflow-hidden flex flex-col"
         style={{ background: BRAND.surface, borderColor: "#E5E7EB" }}
       >
         <StatusBar />
-        <Header daysLeft={daysLeft} onBell={() => setToast("Ilmoitukset: ei uusia")} />
+        <Header onOpenTire={() => setTireOpen(true)} />
 
+        {/* Tabs */}
         <nav
           className="grid grid-cols-4 gap-1 px-3 pt-2 pb-3 sticky top-0 bg-white/80 backdrop-blur z-10 border-b"
           style={{ borderColor: "#E5E7EB" }}
@@ -116,6 +123,7 @@ export default function App() {
           ))}
         </nav>
 
+        {/* Views */}
         <main className="px-4 pb-28 space-y-4 flex-1 overflow-y-auto">
           {activeTab === "etusivu" && (
             <Home
@@ -149,8 +157,10 @@ export default function App() {
           )}
         </main>
 
+        {/* Bottom bar */}
         <BottomBar onProfile={() => setActiveTab("profiili")} />
 
+        {/* Modals */}
         {issueOpen && (
           <Modal title="Ilmoita viasta" onClose={() => setIssueOpen(false)}>
             <IssueForm
@@ -177,6 +187,16 @@ export default function App() {
           </Modal>
         )}
 
+        {tireOpen && (
+          <Modal title="Varaa renkaanvaihto" onClose={() => setTireOpen(false)}>
+            <TireBooking onDone={() => { setTireOpen(false); setToast("Varauspyyntö lähetetty"); }} />
+          </Modal>
+        )}>
+            <ReferFriend onCopy={() => copy("https://courierleasing.fi/suosittele?code=ABC123")} />
+          </Modal>
+        )}
+
+        {/* Toast */}
         {toast && (
           <div
             className="absolute left-1/2 -translate-x-1/2 bottom-4 text-sm px-4 py-2 rounded-full shadow-lg"
@@ -195,12 +215,30 @@ function StatusBar() {
   return <div className="h-6" style={{ background: BRAND.text }} />;
 }
 
-function Header({ daysLeft, onBell }: { daysLeft: number; onBell: () => void }) {
-  const months = Math.floor(daysLeft / 30);
-  const remDays = daysLeft % 30;
+function Header({ onOpenTire }: { onOpenTire: () => void }) {
+  const [open, setOpen] = useState(false);
+  const notifications: { title: string; desc?: string; time?: string }[] = [
+    {
+      title: "Muista varata aika talvirenkaiden vaihtoon",
+      desc: "Sesonki on käynnissä – varaa ajoissa kumppaniverkostosta (demo)",
+      time: "tänään",
+    },
+  ];
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest?.('#notif-root')) setOpen(false);
+    }
+    if (open && typeof document !== 'undefined') document.addEventListener('click', onDocClick);
+    return () => {
+      if (typeof document !== 'undefined') document.removeEventListener('click', onDocClick);
+    };
+  }, [open]);
+
   return (
     <header
-      className="px-5 pt-4 pb-5 drop-shadow-xl flex items-center justify-between"
+      className="px-5 pt-4 pb-5 drop-shadow-xl flex items-center justify-between relative"
       style={{
         color: "#fff",
         background: `linear-gradient(180deg, ${BRAND.primary} 0%, ${BRAND.primaryDark} 100%)`,
@@ -210,16 +248,41 @@ function Header({ daysLeft, onBell }: { daysLeft: number; onBell: () => void }) 
       <div className="flex items-center gap-2">
         <div className="text-white font-bold tracking-wide text-lg">Courier Leasing</div>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="text-xs opacity-90">Jäljellä {months} kk {remDays} pv</div>
+
+      {/* Ilmoitukset */}
+      <div id="notif-root" className="relative">
         <button
-          onClick={onBell}
+          onClick={() => setOpen((v) => !v)}
           aria-label="Ilmoitukset"
           className="rounded-full p-2 hover:opacity-90"
           style={{ background: "#ffffff20" }}
+          data-testid="notif-bell"
         >
           <BellIcon />
         </button>
+        {open && (
+          <div className="absolute right-0 mt-2 w-80 bg-white text-slate-900 rounded-xl border shadow-xl overflow-hidden z-20">
+            <div className="px-3 py-2 text-sm font-semibold border-b">Ilmoitukset</div>
+            {notifications.length === 0 ? (
+              <div className="px-3 py-6 text-sm text-slate-500">Ei uusia ilmoituksia</div>
+            ) : (
+              <ul className="max-h-64 overflow-auto divide-y">
+                {notifications.map((n, i) => (
+                  <li key={i}>
+                    <button
+                      onClick={() => { setOpen(false); onOpenTire(); }}
+                      className="w-full text-left px-3 py-3 hover:bg-slate-50"
+                    >
+                      <div className="text-sm font-medium">{n.title}</div>
+                      {n.desc && <div className="text-xs text-slate-600">{n.desc}</div>}
+                      {n.time && <div className="text-[11px] text-slate-400 mt-0.5">{n.time}</div>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </header>
   );
@@ -365,7 +428,7 @@ function UpdateForm({ onSubmit }: { onSubmit: () => void }) {
         </div>
         <div>
           <label className="block text-sm">Vuosittainen km</label>
-          <input className="w	full rounded-xl border p-2.5" placeholder="20 000" style={{ borderColor: "#E5E7EB" }} />
+          <input className="w-full rounded-xl border p-2.5" placeholder="20 000" style={{ borderColor: "#E5E7EB" }} />
         </div>
         <div>
           <label className="block text-sm">Toivottu kuukausihinta</label>
@@ -436,7 +499,7 @@ function ReferFriend({ onCopy }: { onCopy: () => void }) {
   return (
     <div className="space-y-3">
       <p className="text-sm">
-        Suosittele palvelu tuttavallesi. Kun heidän sopimuksensa alkaa, saat{" "}
+        Suosittele palvelu tuttavallesi. Kun heidän sopimuksensa alkaa, saat {" "}
         <span className="font-semibold">1 kuukauden veloituksetta</span> omaan sopimukseesi.
       </p>
       <div className="rounded-xl border p-3 flex items-center justify-between gap-2" style={{ borderColor: "#E5E7EB" }}>
@@ -515,5 +578,54 @@ function BellIcon() {
       <path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Z" fill="currentColor" />
       <path d="M19 16V11a7 7 0 1 0-14 0v5l-1.5 2v1h17v-1L19 16Z" fill="currentColor" />
     </svg>
+  );
+}
+
+function TireBooking({ onDone }: { onDone: () => void }) {
+  const partners = [
+    { name: "RengasCenter Kamppi", address: "Runeberginkatu 10, Helsinki", phone: "010 123 456" },
+    { name: "Vianor Herttoniemi", address: "Hitsaajankatu 12, Helsinki", phone: "020 765 4321" },
+    { name: "Cityhuolto Espoo", address: "Nihtisillankuja 3, Espoo", phone: "09 555 1234" },
+  ];
+  const slots = ["Ke 09:00", "Ke 10:00", "Ke 14:30", "To 08:30", "To 15:15"]; 
+  const [partnerIdx, setPartnerIdx] = useState(0);
+  const [slot, setSlot] = useState(slots[0]);
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="block text-sm mb-1">Valitse kumppani</label>
+        <select className="w-full rounded-xl border p-2.5" style={{ borderColor: "#E5E7EB" }}
+                value={partnerIdx}
+                onChange={(e) => setPartnerIdx(Number(e.target.value))}>
+          {partners.map((p, i) => (
+            <option key={i} value={i}>{p.name}</option>
+          ))}
+        </select>
+        <div className="text-xs text-slate-600 mt-1">
+          {partners[partnerIdx].address} · {partners[partnerIdx].phone}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm mb-1">Valitse aika</label>
+        <div className="flex flex-wrap gap-2">
+          {slots.map((s) => (
+            <button key={s}
+                    className={`rounded-full border px-3 py-1.5 text-sm ${slot === s ? 'bg-slate-900 text-white' : 'hover:bg-slate-50'}`}
+                    style={{ borderColor: '#E5E7EB' }}
+                    onClick={() => setSlot(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="text-xs text-slate-500">Kesto n. 30–45 min. Palvelu veloitukseton leasing-asiakkaille (demo).</div>
+
+      <button onClick={onDone} className="w-full rounded-xl bg-blue-600 text-white py-2.5 font-medium hover:bg-blue-700">
+        Lähetä varauspyyntö
+      </button>
+    </div>
   );
 }
